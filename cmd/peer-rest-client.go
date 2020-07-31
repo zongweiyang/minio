@@ -21,8 +21,8 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/gob"
+	"errors"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"strconv"
@@ -32,6 +32,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/minio/minio/cmd/http"
+	xhttp "github.com/minio/minio/cmd/http"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/cmd/rest"
 	"github.com/minio/minio/pkg/event"
@@ -44,12 +45,6 @@ import (
 type peerRESTClient struct {
 	host       *xnet.Host
 	restClient *rest.Client
-	connected  int32
-}
-
-// Reconnect to a peer rest server.
-func (client *peerRESTClient) reConnect() {
-	atomic.StoreInt32(&client.connected, 1)
 }
 
 // Wrapper to restClient.Call to handle network errors, in case of network error the connection is marked disconnected
@@ -63,10 +58,6 @@ func (client *peerRESTClient) call(method string, values url.Values, body io.Rea
 // permanently. The only way to restore the connection is at the xl-sets layer by xlsets.monitorAndConnectEndpoints()
 // after verifying format.json
 func (client *peerRESTClient) callWithContext(ctx context.Context, method string, values url.Values, body io.Reader, length int64) (respBody io.ReadCloser, err error) {
-	if !client.IsOnline() {
-		client.reConnect()
-	}
-
 	if values == nil {
 		values = make(url.Values)
 	}
@@ -74,10 +65,6 @@ func (client *peerRESTClient) callWithContext(ctx context.Context, method string
 	respBody, err = client.restClient.CallWithContext(ctx, method, values, body, length)
 	if err == nil {
 		return respBody, nil
-	}
-
-	if isNetworkError(err) {
-		atomic.StoreInt32(&client.connected, 0)
 	}
 
 	return nil, err
@@ -88,14 +75,8 @@ func (client *peerRESTClient) String() string {
 	return client.host.String()
 }
 
-// IsOnline - returns whether RPC client failed to connect or not.
-func (client *peerRESTClient) IsOnline() bool {
-	return atomic.LoadInt32(&client.connected) == 1
-}
-
 // Close - marks the client as closed.
 func (client *peerRESTClient) Close() error {
-	atomic.StoreInt32(&client.connected, 0)
 	client.restClient.Close()
 	return nil
 }
@@ -140,18 +121,21 @@ type progressReader struct {
 
 func (p *progressReader) Read(b []byte) (int, error) {
 	n, err := p.r.Read(b)
-	if err != nil && err != io.EOF {
-		return n, err
+	if n >= 0 {
+		p.progressChan <- int64(n)
 	}
-	p.progressChan <- int64(n)
 	return n, err
+}
+
+type nullReader struct{}
+
+func (r *nullReader) Read(b []byte) (int, error) {
+	return len(b), nil
 }
 
 func (client *peerRESTClient) doNetOBDTest(ctx context.Context, dataSize int64, threadCount uint) (info madmin.NetOBDInfo, err error) {
 	latencies := []float64{}
 	throughputs := []float64{}
-
-	buf := make([]byte, dataSize)
 
 	buflimiter := make(chan struct{}, threadCount)
 	errChan := make(chan error, threadCount)
@@ -181,7 +165,7 @@ func (client *peerRESTClient) doNetOBDTest(ctx context.Context, dataSize int64, 
 		}
 	}
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	finish := func() {
 		<-buflimiter
 		wg.Done()
@@ -201,27 +185,26 @@ func (client *peerRESTClient) doNetOBDTest(ctx context.Context, dataSize int64, 
 			}
 
 			go func(i int) {
-				bufReader := bytes.NewReader(buf)
-				bufReadCloser := ioutil.NopCloser(&progressReader{
-					r:            bufReader,
+				progress := &progressReader{
+					r:            io.LimitReader(&nullReader{}, dataSize),
 					progressChan: transferChan,
-				})
+				}
 				start := time.Now()
 				before := atomic.LoadInt64(&totalTransferred)
 
 				ctx, cancel := context.WithTimeout(innerCtx, 10*time.Second)
 				defer cancel()
-				respBody, err := client.callWithContext(ctx, peerRESTMethodNetOBDInfo, nil, bufReadCloser, dataSize)
-				if err != nil {
 
-					if netErr, ok := err.(*rest.NetworkError); ok {
-						if urlErr, ok := netErr.Err.(*url.Error); ok {
-							if urlErr.Err.Error() == context.DeadlineExceeded.Error() {
-								slowSample()
-								finish()
-								return
-							}
-						}
+				// Turn off healthCheckFn for OBD tests to cater for higher load on the peers.
+				clnt := newPeerRESTClient(client.host)
+				clnt.restClient.HealthCheckFn = nil
+
+				respBody, err := clnt.callWithContext(ctx, peerRESTMethodNetOBDInfo, nil, progress, dataSize)
+				if err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						slowSample()
+						finish()
+						return
 					}
 
 					errChan <- err
@@ -347,15 +330,8 @@ func (client *peerRESTClient) NetOBDInfo(ctx context.Context) (info madmin.NetOB
 				continue
 			}
 
-			if netErr, ok := err.(*rest.NetworkError); ok {
-				if urlErr, ok := netErr.Err.(*url.Error); ok {
-					if urlErr.Err.Error() == context.Canceled.Error() {
-						continue
-					}
-					if urlErr.Err.Error() == context.DeadlineExceeded.Error() {
-						continue
-					}
-				}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				continue
 			}
 		}
 		return info, err
@@ -864,19 +840,14 @@ func newPeerRestClients(endpoints EndpointZones) []*peerRESTClient {
 	peerHosts := getRemoteHosts(endpoints)
 	restClients := make([]*peerRESTClient, len(peerHosts))
 	for i, host := range peerHosts {
-		client, err := newPeerRESTClient(host)
-		if err != nil {
-			logger.LogIf(GlobalContext, err)
-			continue
-		}
-		restClients[i] = client
+		restClients[i] = newPeerRESTClient(host)
 	}
 
 	return restClients
 }
 
 // Returns a peer rest client.
-func newPeerRESTClient(peer *xnet.Host) (*peerRESTClient, error) {
+func newPeerRESTClient(peer *xnet.Host) *peerRESTClient {
 	scheme := "http"
 	if globalIsSSL {
 		scheme = "https"
@@ -897,10 +868,19 @@ func newPeerRESTClient(peer *xnet.Host) (*peerRESTClient, error) {
 	}
 
 	trFn := newCustomHTTPTransport(tlsConfig, rest.DefaultRESTTimeout)
-	restClient, err := rest.NewClient(serverURL, trFn, newAuthToken)
-	if err != nil {
-		return nil, err
+	restClient := rest.NewClient(serverURL, trFn, newAuthToken)
+
+	// Construct a new health function.
+	restClient.HealthCheckFn = func() bool {
+		ctx, cancel := context.WithTimeout(GlobalContext, restClient.HealthCheckTimeout)
+		// Instantiate a new rest client for healthcheck
+		// to avoid recursive healthCheckFn()
+		respBody, err := rest.NewClient(serverURL, trFn, newAuthToken).CallWithContext(ctx, peerRESTMethodHealth, nil, nil, -1)
+		xhttp.DrainBody(respBody)
+		cancel()
+		var ne *rest.NetworkError
+		return !errors.Is(err, context.DeadlineExceeded) && !errors.As(err, &ne)
 	}
 
-	return &peerRESTClient{host: peer, restClient: restClient, connected: 1}, nil
+	return &peerRESTClient{host: peer, restClient: restClient}
 }

@@ -22,16 +22,17 @@ import (
 	"crypto/tls"
 	"encoding/gob"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"time"
 
 	"github.com/minio/minio/cmd/http"
-	"github.com/minio/minio/cmd/logger"
+	xhttp "github.com/minio/minio/cmd/http"
 	"github.com/minio/minio/cmd/rest"
 	xnet "github.com/minio/minio/pkg/net"
 )
@@ -130,9 +131,6 @@ func (client *storageRESTClient) call(method string, values url.Values, body io.
 	}
 
 	err = toStorageErr(err)
-	if err == errDiskNotFound {
-		atomic.StoreInt32(&client.connected, 0)
-	}
 
 	return nil, err
 }
@@ -144,7 +142,7 @@ func (client *storageRESTClient) String() string {
 
 // IsOnline - returns whether RPC client failed to connect or not.
 func (client *storageRESTClient) IsOnline() bool {
-	return atomic.LoadInt32(&client.connected) == 1
+	return client.restClient.IsOnline()
 }
 
 func (client *storageRESTClient) IsLocal() bool {
@@ -554,7 +552,6 @@ func (client *storageRESTClient) VerifyFile(volume, path string, size int64, alg
 
 // Close - marks the client as closed.
 func (client *storageRESTClient) Close() error {
-	atomic.StoreInt32(&client.connected, 0)
 	client.restClient.Close()
 	return nil
 }
@@ -577,10 +574,17 @@ func newStorageRESTClient(endpoint Endpoint) *storageRESTClient {
 	}
 
 	trFn := newCustomHTTPTransport(tlsConfig, rest.DefaultRESTTimeout)
-	restClient, err := rest.NewClient(serverURL, trFn, newAuthToken)
-	if err != nil {
-		logger.LogIf(GlobalContext, err)
-		return &storageRESTClient{endpoint: endpoint, restClient: restClient, connected: 0}
+	restClient := rest.NewClient(serverURL, trFn, newAuthToken)
+	restClient.HealthCheckInterval = 500 * time.Millisecond
+	restClient.HealthCheckFn = func() bool {
+		ctx, cancel := context.WithTimeout(GlobalContext, restClient.HealthCheckTimeout)
+		// Instantiate a new rest client for healthcheck
+		// to avoid recursive healthCheckFn()
+		respBody, err := rest.NewClient(serverURL, trFn, newAuthToken).CallWithContext(ctx, storageRESTMethodHealth, nil, nil, -1)
+		xhttp.DrainBody(respBody)
+		cancel()
+		return !errors.Is(err, context.DeadlineExceeded) && toStorageErr(err) != errDiskNotFound
 	}
-	return &storageRESTClient{endpoint: endpoint, restClient: restClient, connected: 1}
+
+	return &storageRESTClient{endpoint: endpoint, restClient: restClient}
 }
