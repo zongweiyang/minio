@@ -605,10 +605,9 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 
-	const ndisks = 3
 	for _, zone := range z.zones {
 		zonesEntryChs = append(zonesEntryChs,
-			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, ndisks))
+			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, zone.drivesPerSet))
 	}
 
 	var objInfos []ObjectInfo
@@ -622,19 +621,24 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 		zonesEntriesValid = append(zonesEntriesValid, make([]bool, len(entryChs)))
 	}
 
+	var zoneDrivesPerSet []int
+	for _, zone := range z.zones {
+		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.drivesPerSet)
+	}
+
 	for {
 		if len(objInfos) == maxKeys {
 			break
 		}
 
-		result, quorumCount, _, ok := lexicallySortedEntryZone(zonesEntryChs, zonesEntriesInfos, zonesEntriesValid)
+		result, quorumCount, zoneIdx, ok := lexicallySortedEntryZone(zonesEntryChs, zonesEntriesInfos, zonesEntriesValid)
 		if !ok {
 			eof = true
 			break
 		}
 
-		if quorumCount < ndisks-1 {
-			// Skip entries which are not found on upto ndisks.
+		if quorumCount < zoneDrivesPerSet[zoneIdx]/2 {
+			// Skip entries which are not found on upto read quorum.
 			continue
 		}
 
@@ -721,18 +725,22 @@ func (z *xlZones) listObjectsSplunk(ctx context.Context, bucket, prefix, marker 
 	var zonesEntryChs [][]FileInfoCh
 	var zonesEndWalkCh []chan struct{}
 
-	const ndisks = 3
 	for _, zone := range z.zones {
 		entryChs, endWalkCh := zone.poolSplunk.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startSplunkMergeWalksN(ctx, bucket, prefix, marker, endWalkCh, ndisks)
+			entryChs = zone.startSplunkMergeWalksN(ctx, bucket, prefix, marker, endWalkCh, zone.drivesPerSet)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)
 	}
 
-	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, ndisks)
+	var zoneDrivesPerSet []int
+	for _, zone := range z.zones {
+		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.drivesPerSet)
+	}
+
+	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, zoneDrivesPerSet)
 	if len(entries.Files) == 0 {
 		return loi, nil
 	}
@@ -812,18 +820,22 @@ func (z *xlZones) listObjects(ctx context.Context, bucket, prefix, marker, delim
 	var zonesEntryChs [][]FileInfoCh
 	var zonesEndWalkCh []chan struct{}
 
-	const ndisks = 3
 	for _, zone := range z.zones {
 		entryChs, endWalkCh := zone.pool.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, ndisks)
+			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, zone.drivesPerSet)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)
 	}
 
-	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, ndisks)
+	var zoneDrivesPerSet []int
+	for _, zone := range z.zones {
+		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.drivesPerSet)
+	}
+
+	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, zoneDrivesPerSet)
 	if len(entries.Files) == 0 {
 		return loi, nil
 	}
@@ -929,7 +941,7 @@ func lexicallySortedEntryZone(zoneEntryChs [][]FileInfoCh, zoneEntries [][]FileI
 }
 
 // mergeZonesEntriesCh - merges FileInfo channel to entries upto maxKeys.
-func mergeZonesEntriesCh(zonesEntryChs [][]FileInfoCh, maxKeys int, ndisks int) (entries FilesInfo) {
+func mergeZonesEntriesCh(zonesEntryChs [][]FileInfoCh, maxKeys int, zoneDrivesPerSet []int) (entries FilesInfo) {
 	var i = 0
 	var zonesEntriesInfos [][]FileInfo
 	var zonesEntriesValid [][]bool
@@ -938,14 +950,14 @@ func mergeZonesEntriesCh(zonesEntryChs [][]FileInfoCh, maxKeys int, ndisks int) 
 		zonesEntriesValid = append(zonesEntriesValid, make([]bool, len(entryChs)))
 	}
 	for {
-		fi, quorumCount, _, ok := lexicallySortedEntryZone(zonesEntryChs, zonesEntriesInfos, zonesEntriesValid)
+		fi, quorumCount, zoneIdx, ok := lexicallySortedEntryZone(zonesEntryChs, zonesEntriesInfos, zonesEntriesValid)
 		if !ok {
 			// We have reached EOF across all entryChs, break the loop.
 			break
 		}
 
-		if quorumCount < ndisks-1 {
-			// Skip entries which are not found on upto ndisks.
+		if quorumCount < zoneDrivesPerSet[zoneIdx]/2 {
+			// Skip entries which are not found on upto read quorum.
 			continue
 		}
 

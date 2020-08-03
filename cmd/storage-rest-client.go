@@ -110,7 +110,6 @@ func toStorageErr(err error) error {
 type storageRESTClient struct {
 	endpoint   Endpoint
 	restClient *rest.Client
-	connected  int32
 	diskID     string
 }
 

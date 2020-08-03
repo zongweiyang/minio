@@ -525,6 +525,8 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 
 	parts1, errs1 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object1)
 
+	parts1SC := globalStorageClass
+
 	// Object for test case 2 - No StorageClass defined, MetaData in PutObject requesting RRS Class
 	object2 := "object2"
 	metadata2 := make(map[string]string)
@@ -535,6 +537,7 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 	}
 
 	parts2, errs2 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object2)
+	parts2SC := globalStorageClass
 
 	// Object for test case 3 - No StorageClass defined, MetaData in PutObject requesting Standard Storage Class
 	object3 := "object3"
@@ -546,6 +549,7 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 	}
 
 	parts3, errs3 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object3)
+	parts3SC := globalStorageClass
 
 	// Object for test case 4 - Standard StorageClass defined as Parity 6, MetaData in PutObject requesting Standard Storage Class
 	object4 := "object4"
@@ -563,6 +567,11 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 	}
 
 	parts4, errs4 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object4)
+	parts4SC := storageclass.Config{
+		Standard: storageclass.StorageClass{
+			Parity: 6,
+		},
+	}
 
 	// Object for test case 5 - RRS StorageClass defined as Parity 2, MetaData in PutObject requesting RRS Class
 	// Reset global storage class flags
@@ -581,6 +590,11 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 	}
 
 	parts5, errs5 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object5)
+	parts5SC := storageclass.Config{
+		RRS: storageclass.StorageClass{
+			Parity: 2,
+		},
+	}
 
 	// Object for test case 6 - RRS StorageClass defined as Parity 2, MetaData in PutObject requesting Standard Storage Class
 	object6 := "object6"
@@ -598,6 +612,11 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 	}
 
 	parts6, errs6 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object6)
+	parts6SC := storageclass.Config{
+		RRS: storageclass.StorageClass{
+			Parity: 2,
+		},
+	}
 
 	// Object for test case 7 - Standard StorageClass defined as Parity 5, MetaData in PutObject requesting RRS Class
 	// Reset global storage class flags
@@ -616,23 +635,31 @@ func testObjectQuorumFromMeta(obj ObjectLayer, instanceType string, dirs []strin
 	}
 
 	parts7, errs7 := readAllXLMetadata(GlobalContext, xlDisks, bucket, object7)
+	parts7SC := storageclass.Config{
+		Standard: storageclass.StorageClass{
+			Parity: 5,
+		},
+	}
 
 	tests := []struct {
 		parts               []xlMetaV1
 		errs                []error
 		expectedReadQuorum  int
 		expectedWriteQuorum int
+		storageClassCfg     storageclass.Config
 		expectedError       error
 	}{
-		{parts1, errs1, 8, 9, nil},
-		{parts2, errs2, 14, 15, nil},
-		{parts3, errs3, 8, 9, nil},
-		{parts4, errs4, 10, 11, nil},
-		{parts5, errs5, 14, 15, nil},
-		{parts6, errs6, 8, 9, nil},
-		{parts7, errs7, 14, 15, nil},
+		{parts1, errs1, 8, 9, parts1SC, nil},
+		{parts2, errs2, 14, 14, parts2SC, nil},
+		{parts3, errs3, 8, 9, parts3SC, nil},
+		{parts4, errs4, 10, 10, parts4SC, nil},
+		{parts5, errs5, 14, 14, parts5SC, nil},
+		{parts6, errs6, 8, 9, parts6SC, nil},
+		{parts7, errs7, 14, 14, parts7SC, nil},
 	}
+
 	for i, tt := range tests {
+		globalStorageClass = tt.storageClassCfg
 		actualReadQuorum, actualWriteQuorum, err := objectQuorumFromMeta(GlobalContext, *xl, tt.parts, tt.errs)
 		if tt.expectedError != nil && err == nil {
 			t.Errorf("Test %d, Expected %s, got %s", i+1, tt.expectedError, err)

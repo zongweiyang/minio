@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/minio/minio/cmd/config"
 	xhttp "github.com/minio/minio/cmd/http"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/cmd/rest"
@@ -227,9 +226,6 @@ func connectLoadInitFormats(retryCount int, firstDisk bool, endpoints Endpoints,
 	formatConfigs, sErrs := loadFormatXLAll(storageDisks, false)
 	// Check if we have
 	for i, sErr := range sErrs {
-		if _, ok := formatCriticalErrors[sErr]; ok {
-			return nil, nil, config.ErrCorruptedBackend(err).Hint(fmt.Sprintf("Clear any pre-existing content on %s", endpoints[i]))
-		}
 		// not critical error but still print the error, nonetheless, which is perhaps unhandled
 		if sErr != errUnformattedDisk && sErr != errDiskNotFound && retryCount >= 5 {
 			if sErr != nil {

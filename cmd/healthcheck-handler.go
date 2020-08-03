@@ -21,11 +21,16 @@ import (
 	"net/http"
 )
 
-// ReadinessCheckHandler returns if the server is ready to receive requests.
-// For FS - Checks if the backend disk is available
-// For Erasure backend - Checks if all the erasure sets are writable
+// ReadinessCheckHandler Checks if the process is up. Always returns success.
 func ReadinessCheckHandler(w http.ResponseWriter, r *http.Request) {
-	ctx := newContext(r, w, "ReadinessCheckHandler")
+	// TODO: only implement this function to notify that this pod is
+	// busy, at a local scope in future, for now '200 OK'.
+	writeResponse(w, http.StatusOK, nil, mimeNone)
+}
+
+// ClusterCheckHandler returns if the server is ready for requests.
+func ClusterCheckHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := newContext(r, w, "ClusterCheckHandler")
 
 	objLayer := newObjectLayerWithoutSafeModeFn()
 	// Service not initialized yet

@@ -23,7 +23,7 @@ import (
 	"github.com/minio/minio/cmd/logger"
 )
 
-const defaultMonitorNewDiskInterval = time.Minute * 10
+const defaultMonitorNewDiskInterval = time.Minute * 3
 
 func initLocalDisksAutoHeal(ctx context.Context, objAPI ObjectLayer) {
 	go monitorLocalDisksAndHeal(ctx, objAPI)

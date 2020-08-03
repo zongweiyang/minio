@@ -27,7 +27,6 @@ import (
 	"sync"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/minio/minio/cmd/config"
 	"github.com/minio/minio/cmd/config/storageclass"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/color"
@@ -59,10 +58,6 @@ const offlineDiskUUID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 var formatHealErrors = map[error]struct{}{
 	errUnformattedDisk: {},
 	errDiskNotFound:    {},
-}
-
-// List of errors considered critical for disk formatting.
-var formatCriticalErrors = map[error]struct{}{
 	errCorruptedFormat: {},
 	errFaultyDisk:      {},
 }
@@ -497,14 +492,8 @@ func formatXLGetDeploymentID(refFormat *formatXLV3, formats []*formatXLV3) (stri
 // formatXLFixDeploymentID - Add deployment id if it is not present.
 func formatXLFixDeploymentID(endpoints Endpoints, storageDisks []StorageAPI, refFormat *formatXLV3) (err error) {
 	// Attempt to load all `format.json` from all disks.
-	var sErrs []error
-	formats, sErrs := loadFormatXLAll(storageDisks, false)
-	for i, sErr := range sErrs {
-		if _, ok := formatCriticalErrors[sErr]; ok {
-			return config.ErrCorruptedBackend(err).Hint(fmt.Sprintf("Clear any pre-existing content on %s", endpoints[i]))
-		}
-	}
 
+	formats, _ := loadFormatXLAll(storageDisks, false)
 	for index := range formats {
 		// If the XL sets do not match, set those formats to nil,
 		// We do not have to update the ID on those format.json file.
@@ -512,6 +501,7 @@ func formatXLFixDeploymentID(endpoints Endpoints, storageDisks []StorageAPI, ref
 			formats[index] = nil
 		}
 	}
+
 	refFormat.ID, err = formatXLGetDeploymentID(refFormat, formats)
 	if err != nil {
 		return err
@@ -706,6 +696,9 @@ func saveFormatXLAll(ctx context.Context, storageDisks []StorageAPI, formats []*
 	for index := range storageDisks {
 		index := index
 		g.Go(func() error {
+			if formats[index] == nil {
+				return errDiskNotFound
+			}
 			return saveFormatXL(storageDisks[index], formats[index], formats[index].XL.This)
 		}, index)
 	}

@@ -453,7 +453,18 @@ func objectQuorumFromMeta(ctx context.Context, xl xlObjects, partsMetaData []xlM
 		return 0, 0, err
 	}
 
+	dataBlocks := latestXLMeta.Erasure.DataBlocks
+	parityBlocks := globalStorageClass.GetParityForSC(latestXLMeta.Meta[xhttp.AmzStorageClass])
+	if parityBlocks == 0 {
+		parityBlocks = dataBlocks
+	}
+
+	writeQuorum := dataBlocks
+	if dataBlocks == parityBlocks {
+		writeQuorum = dataBlocks + 1
+	}
+
 	// Since all the valid erasure code meta updated at the same time are equivalent, pass dataBlocks
 	// from latestXLMeta to get the quorum
-	return latestXLMeta.Erasure.DataBlocks, latestXLMeta.Erasure.DataBlocks + 1, nil
+	return latestXLMeta.Erasure.DataBlocks, writeQuorum, nil
 }
