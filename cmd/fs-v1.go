@@ -1208,23 +1208,31 @@ func (fs *FSObjects) DeleteObject(ctx context.Context, bucket, object string) er
 	return nil
 }
 
+func (fs *FSObjects) isLeafDir(bucket string, leafPath string) bool {
+	return fs.isObjectDir(bucket, leafPath)
+}
+
+func (fs *FSObjects) isLeaf(bucket string, leafPath string) bool {
+	return !strings.HasSuffix(leafPath, slashSeparator)
+}
+
 // Returns function "listDir" of the type listDirFunc.
 // isLeaf - is used by listDir function to check if an entry
 // is a leaf or non-leaf entry.
 func (fs *FSObjects) listDirFactory() ListDirFunc {
 	// listDir - lists all the entries at a given prefix and given entry in the prefix.
-	listDir := func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []string) {
+	listDir := func(bucket, prefixDir, prefixEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
 		var err error
 		entries, err = readDir(pathJoin(fs.fsPath, bucket, prefixDir))
 		if err != nil && err != errFileNotFound {
 			logger.LogIf(GlobalContext, err)
-			return false, nil
+			return false, nil, false
 		}
 		if len(entries) == 0 {
-			return true, nil
+			return true, nil, false
 		}
-		sort.Strings(entries)
-		return false, filterMatchingPrefix(entries, prefixEntry)
+		entries, delayIsLeaf = filterListEntries(bucket, prefixDir, entries, prefixEntry, fs.isLeaf)
+		return false, entries, delayIsLeaf
 	}
 
 	// Return list factory instance.
@@ -1323,7 +1331,7 @@ func (fs *FSObjects) ListObjects(ctx context.Context, bucket, prefix, marker, de
 	}()
 
 	return listObjects(ctx, fs, bucket, prefix, marker, delimiter, maxKeys, fs.listPool,
-		fs.listDirFactory(), fs.getObjectInfo, fs.getObjectInfo)
+		fs.listDirFactory(), fs.isLeaf, fs.isLeafDir, fs.getObjectInfo, fs.getObjectInfo)
 }
 
 // GetObjectTags - get object tags from an existing object
@@ -1405,7 +1413,7 @@ func (fs *FSObjects) HealBucket(ctx context.Context, bucket string, dryRun, remo
 // error walker returns error. Optionally if context.Done() is received
 // then Walk() stops the walker.
 func (fs *FSObjects) Walk(ctx context.Context, bucket, prefix string, results chan<- ObjectInfo) error {
-	return fsWalk(ctx, fs, bucket, prefix, fs.listDirFactory(), results, fs.getObjectInfo, fs.getObjectInfo)
+	return fsWalk(ctx, fs, bucket, prefix, fs.listDirFactory(), fs.isLeaf, fs.isLeafDir, results, fs.getObjectInfo, fs.getObjectInfo)
 }
 
 // HealObjects - no-op for fs. Valid only for XL.

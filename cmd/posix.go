@@ -26,10 +26,10 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	slashpath "path"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -710,8 +710,6 @@ func (s *posix) ListDirSplunk(volume, dirPath string, count int) (entries []stri
 		return nil, nil
 	}
 
-	const receiptJSON = "receipt.json"
-
 	atomic.AddInt32(&s.activeIOCount, 1)
 	defer func() {
 		atomic.AddInt32(&s.activeIOCount, -1)
@@ -742,16 +740,35 @@ func (s *posix) ListDirSplunk(volume, dirPath string, count int) (entries []stri
 		return nil, err
 	}
 
-	for i, entry := range entries {
-		if entry != receiptJSON {
-			continue
-		}
-		if _, serr := os.Stat(pathJoin(dirPath, entry, xlMetaJSONFile)); serr == nil {
-			entries[i] = strings.TrimSuffix(entry, SlashSeparator)
-		}
+	return entries, nil
+}
+
+func (s *posix) isLeafSplunk(volume string, leafPath string) bool {
+	const receiptJSON = "receipt.json"
+
+	if path.Base(leafPath) != receiptJSON {
+		return false
+	}
+	return s.isLeaf(volume, leafPath)
+}
+
+func (s *posix) isLeaf(volume string, leafPath string) bool {
+	volumeDir, err := s.getVolDir(volume)
+	if err != nil {
+		return false
 	}
 
-	return entries, nil
+	_, err = os.Stat(pathJoin(volumeDir, leafPath, xlMetaJSONFile))
+	return err == nil
+}
+
+func (s *posix) isLeafDir(volume, leafPath string) bool {
+	volumeDir, err := s.getVolDir(volume)
+	if err != nil {
+		return false
+	}
+
+	return isDirEmpty(pathJoin(volumeDir, leafPath))
 }
 
 // WalkSplunk - is a sorted walker which returns file entries in lexically
@@ -779,19 +796,19 @@ func (s *posix) WalkSplunk(volume, dirPath, marker string, endWalkCh <-chan stru
 	ch = make(chan FileInfo)
 	go func() {
 		defer close(ch)
-		listDir := func(volume, dirPath, dirEntry string) (bool, []string) {
+		listDir := func(volume, dirPath, dirEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
 			entries, err := s.ListDirSplunk(volume, dirPath, -1)
 			if err != nil {
-				return false, nil
+				return false, nil, false
 			}
 			if len(entries) == 0 {
-				return true, nil
+				return true, nil, false
 			}
-			sort.Strings(entries)
-			return false, filterMatchingPrefix(entries, dirEntry)
+			entries, delayIsLeaf = filterListEntries(volume, dirPath, entries, dirEntry, s.isLeafSplunk)
+			return false, entries, delayIsLeaf
 		}
 
-		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, true, listDir, endWalkCh)
+		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, true, listDir, s.isLeafSplunk, s.isLeafDir, endWalkCh)
 		for {
 			walkResult, ok := <-walkResultCh
 			if !ok {
@@ -849,28 +866,23 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 		return nil, err
 	}
 
-	// buffer channel matches the S3 ListObjects implementation
-	ch = make(chan FileInfo, maxObjectList)
+	ch = make(chan FileInfo)
 	go func() {
 		defer close(ch)
-		listDir := func(volume, dirPath, dirEntry string) (bool, []string) {
-			entries, err := s.ListDir(volume, dirPath, -1, leafFile)
+		listDir := func(volume, dirPath, dirEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
+			entries, err := s.ListDir(volume, dirPath, -1, "")
 			if err != nil {
-				return false, nil
+				return false, nil, false
 			}
 			if len(entries) == 0 {
-				return true, nil
+				return true, nil, false
 			}
-			sort.Strings(entries)
-			return false, filterMatchingPrefix(entries, dirEntry)
+			entries, delayIsLeaf = filterListEntries(volume, dirPath, entries, dirEntry, s.isLeaf)
+			return false, entries, delayIsLeaf
 		}
 
-		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, recursive, listDir, endWalkCh)
-		for {
-			walkResult, ok := <-walkResultCh
-			if !ok {
-				return
-			}
+		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, recursive, listDir, s.isLeaf, s.isLeafDir, endWalkCh)
+		for walkResult := range walkResultCh {
 			var fi FileInfo
 			if HasSuffix(walkResult.entry, SlashSeparator) {
 				fi = FileInfo{
@@ -929,16 +941,7 @@ func (s *posix) ListDir(volume, dirPath string, count int, leafFile string) (ent
 		return nil, err
 	}
 
-	// If leaf file is specified, filter out the entries.
-	if leafFile != "" {
-		for i, entry := range entries {
-			if _, serr := os.Stat(pathJoin(dirPath, entry, leafFile)); serr == nil {
-				entries[i] = strings.TrimSuffix(entry, SlashSeparator)
-			}
-		}
-	}
-
-	return entries, err
+	return entries, nil
 }
 
 // ReadAll reads from r until an error or EOF and returns the data it read.
