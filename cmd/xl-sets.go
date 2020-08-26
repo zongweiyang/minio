@@ -889,7 +889,7 @@ func lexicallySortedEntry(entryChs []FileInfoCh, entries []FileInfo, entriesVali
 }
 
 // mergeEntriesCh - merges FileInfo channel to entries upto maxKeys.
-func mergeEntriesCh(entryChs []FileInfoCh, maxKeys int, drivesPerSet int) (entries FilesInfo) {
+func mergeEntriesCh(entryChs []FileInfoCh, maxKeys int, tolerance int) (entries FilesInfo) {
 	var i = 0
 	entriesInfos := make([]FileInfo, len(entryChs))
 	entriesValid := make([]bool, len(entryChs))
@@ -900,7 +900,7 @@ func mergeEntriesCh(entryChs []FileInfoCh, maxKeys int, drivesPerSet int) (entri
 			break
 		}
 
-		if quorumCount < drivesPerSet/2 {
+		if quorumCount < tolerance {
 			// Skip entries which are not found on upto read quorum
 			continue
 		}
@@ -1157,11 +1157,11 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	entryChs, endWalkCh := s.pool.Release(listParams{bucket: bucket, recursive: recursive, marker: marker, prefix: prefix})
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
-		// start file tree walk across at most randomly 3 disks in a set.
-		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.drivesPerSet/2+1)
+		// start file tree walk across at most randomly 1 disk per set
+		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, 1)
 	}
 
-	entries := mergeEntriesCh(entryChs, maxKeys, s.drivesPerSet)
+	entries := mergeEntriesCh(entryChs, maxKeys, 1)
 	if len(entries.Files) == 0 {
 		return loi, nil
 	}
