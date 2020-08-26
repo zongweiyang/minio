@@ -809,11 +809,7 @@ func (s *posix) WalkSplunk(volume, dirPath, marker string, endWalkCh <-chan stru
 		}
 
 		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, true, listDir, s.isLeafSplunk, s.isLeafDir, endWalkCh)
-		for {
-			walkResult, ok := <-walkResultCh
-			if !ok {
-				return
-			}
+		for walkResult := range walkResultCh {
 			var fi FileInfo
 			if HasSuffix(walkResult.entry, SlashSeparator) {
 				fi = FileInfo{

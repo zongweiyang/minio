@@ -950,6 +950,9 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 	for _, set := range s.sets {
 		// Reset for the next erasure set.
 		success = drivesPerSet
+		if success > 0 {
+			success = 1
+		}
 		for _, disk := range set.getLoadBalancedDisks() {
 			if disk == nil {
 				// Disk can be offline
@@ -978,8 +981,10 @@ func (s *xlSets) startSplunkMergeWalksN(ctx context.Context, bucket, prefix, mar
 	var entryChs []FileInfoCh
 	var success int
 	for _, set := range s.sets {
-		// Reset for the next erasure set.
 		success = drivesPerSet
+		if success > 0 {
+			success = 1
+		}
 		for _, disk := range set.getLoadBalancedDisks() {
 			if disk == nil {
 				// Disk can be offline
