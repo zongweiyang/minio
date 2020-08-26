@@ -970,9 +970,6 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 	for _, set := range s.sets {
 		// Reset for the next erasure set.
 		success = drivesPerSet
-		if drivesPerSet > 0 {
-			success = drivesPerSet/2 + 1
-		}
 		for _, disk := range set.getLoadBalancedDisks() {
 			if disk == nil {
 				// Disk can be offline
@@ -1003,9 +1000,6 @@ func (s *xlSets) startSplunkMergeWalksN(ctx context.Context, bucket, prefix, mar
 	for _, set := range s.sets {
 		// Reset for the next erasure set.
 		success = drivesPerSet
-		if drivesPerSet > 0 {
-			success = drivesPerSet/2 + 1
-		}
 		for _, disk := range set.getLoadBalancedDisks() {
 			if disk == nil {
 				// Disk can be offline
@@ -1032,7 +1026,7 @@ func (s *xlSets) listObjectsNonSlash(ctx context.Context, bucket, prefix, marker
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 
-	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.drivesPerSet)
+	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.drivesPerSet/2+1)
 
 	var objInfos []ObjectInfo
 	var eof bool
@@ -1179,7 +1173,7 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
 		// start file tree walk across at most randomly 3 disks in a set.
-		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.drivesPerSet)
+		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.drivesPerSet/2+1)
 	}
 
 	entries := mergeEntriesCh(entryChs, maxKeys, s.drivesPerSet)
