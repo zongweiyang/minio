@@ -831,17 +831,10 @@ func (f *FileInfoCh) Push(fi FileInfo) {
 // if the caller wishes to list N entries to call lexicallySortedEntry
 // N times until this boolean is 'false'.
 func lexicallySortedEntry(entryChs []FileInfoCh, entries []FileInfo, entriesValid []bool) (FileInfo, int, bool) {
-	var wg sync.WaitGroup
 	for j := range entryChs {
-		j := j
-		wg.Add(1)
 		// Pop() entries in parallel for large drive setups.
-		go func() {
-			defer wg.Done()
-			entries[j], entriesValid[j] = entryChs[j].Pop()
-		}()
+		entries[j], entriesValid[j] = entryChs[j].Pop()
 	}
-	wg.Wait()
 
 	var isTruncated = false
 	for _, valid := range entriesValid {
@@ -923,16 +916,9 @@ func mergeEntriesCh(entryChs []FileInfoCh, maxKeys int, drivesPerSet int) (entri
 }
 
 func isTruncated(entryChs []FileInfoCh, entries []FileInfo, entriesValid []bool) bool {
-	var wg sync.WaitGroup
 	for i := range entryChs {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			entries[i], entriesValid[i] = entryChs[i].Pop()
-		}()
+		entries[i], entriesValid[i] = entryChs[i].Pop()
 	}
-	wg.Wait()
 
 	var isTruncated = false
 	for _, valid := range entriesValid {
@@ -944,16 +930,10 @@ func isTruncated(entryChs []FileInfoCh, entries []FileInfo, entriesValid []bool)
 	}
 
 	for i := range entryChs {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if entriesValid[i] {
-				entryChs[i].Push(entries[i])
-			}
-		}()
+		if entriesValid[i] {
+			entryChs[i].Push(entries[i])
+		}
 	}
-	wg.Wait()
 
 	return isTruncated
 }
