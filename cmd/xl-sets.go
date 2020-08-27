@@ -1011,7 +1011,7 @@ func (s *xlSets) listObjectsNonSlash(ctx context.Context, bucket, prefix, marker
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 
-	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.drivesPerSet/2+1)
+	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.drivesPerSet/2)
 
 	var objInfos []ObjectInfo
 	var eof bool
@@ -1158,10 +1158,10 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
 		// start file tree walk across at most randomly 1 disk per set
-		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, 1)
+		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.drivesPerSet/2)
 	}
 
-	entries := mergeEntriesCh(entryChs, maxKeys, 1)
+	entries := mergeEntriesCh(entryChs, maxKeys, s.drivesPerSet/2)
 	if len(entries.Files) == 0 {
 		return loi, nil
 	}
