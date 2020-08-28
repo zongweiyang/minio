@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/bpool"
 	"github.com/minio/minio/pkg/dsync"
+	"github.com/minio/minio/pkg/env"
 	"github.com/minio/minio/pkg/madmin"
 	"github.com/minio/minio/pkg/sync/errgroup"
 )
@@ -75,6 +77,7 @@ type xlSets struct {
 
 	// Total number of sets and the number of disks per set.
 	setCount, drivesPerSet int
+	listDrivesPerSet       int
 
 	disksConnectEvent chan diskConnectInfo
 
@@ -287,6 +290,19 @@ func newXLSets(ctx context.Context, endpoints Endpoints, storageDisks []StorageA
 	setCount := len(format.XL.Sets)
 	drivesPerSet := len(format.XL.Sets[0])
 
+	var listDrivesPerSet int
+	if v := env.Get("MINIO_LIST_DRIVES_PER_SET", ""); v != "" {
+		var err error
+		listDrivesPerSet, err = strconv.Atoi(v)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		listDrivesPerSet = drivesPerSet / 2
+	}
+
+	logger.Info("Using total drives to list %d", listDrivesPerSet*setCount)
+
 	endpointStrings := make([]string, len(endpoints))
 	// Initialize the XL sets instance.
 	s := &xlSets{
@@ -295,6 +311,7 @@ func newXLSets(ctx context.Context, endpoints Endpoints, storageDisks []StorageA
 		xlLockers:          make([][]dsync.NetLocker, setCount),
 		setCount:           setCount,
 		drivesPerSet:       drivesPerSet,
+		listDrivesPerSet:   listDrivesPerSet,
 		format:             format,
 		endpoints:          endpoints,
 		endpointStrings:    endpointStrings,
@@ -1011,7 +1028,7 @@ func (s *xlSets) listObjectsNonSlash(ctx context.Context, bucket, prefix, marker
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 
-	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.drivesPerSet/2)
+	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.listDrivesPerSet)
 
 	var objInfos []ObjectInfo
 	var eof bool
@@ -1030,7 +1047,7 @@ func (s *xlSets) listObjectsNonSlash(ctx context.Context, bucket, prefix, marker
 			break
 		}
 
-		if quorumCount < s.drivesPerSet/2 {
+		if quorumCount < s.listDrivesPerSet {
 			// Skip entries which are not found on upto read quorum.
 			continue
 		}
@@ -1158,10 +1175,10 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
 		// start file tree walk across at most randomly 1 disk per set
-		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.drivesPerSet/2)
+		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.listDrivesPerSet)
 	}
 
-	entries := mergeEntriesCh(entryChs, maxKeys, s.drivesPerSet/2)
+	entries := mergeEntriesCh(entryChs, maxKeys, s.listDrivesPerSet)
 	if len(entries.Files) == 0 {
 		return loi, nil
 	}

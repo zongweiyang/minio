@@ -607,7 +607,7 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 
 	for _, zone := range z.zones {
 		zonesEntryChs = append(zonesEntryChs,
-			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, zone.drivesPerSet))
+			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, zone.listDrivesPerSet))
 	}
 
 	var objInfos []ObjectInfo
@@ -623,7 +623,7 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 
 	var zoneDrivesPerSet []int
 	for _, zone := range z.zones {
-		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.drivesPerSet)
+		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.listDrivesPerSet)
 	}
 
 	for {
@@ -637,7 +637,7 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 			break
 		}
 
-		if quorumCount < zoneDrivesPerSet[zoneIdx]/2 {
+		if quorumCount < zoneDrivesPerSet[zoneIdx] {
 			// Skip entries which are not found on upto read quorum.
 			continue
 		}
@@ -729,7 +729,7 @@ func (z *xlZones) listObjectsSplunk(ctx context.Context, bucket, prefix, marker 
 		entryChs, endWalkCh := zone.poolSplunk.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startSplunkMergeWalksN(ctx, bucket, prefix, marker, endWalkCh, zone.drivesPerSet/2)
+			entryChs = zone.startSplunkMergeWalksN(ctx, bucket, prefix, marker, endWalkCh, zone.listDrivesPerSet)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)
@@ -737,7 +737,7 @@ func (z *xlZones) listObjectsSplunk(ctx context.Context, bucket, prefix, marker 
 
 	var zoneDrivesPerSet []int
 	for _, zone := range z.zones {
-		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.drivesPerSet/2)
+		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.listDrivesPerSet)
 	}
 
 	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, zoneDrivesPerSet)
@@ -824,7 +824,7 @@ func (z *xlZones) listObjects(ctx context.Context, bucket, prefix, marker, delim
 		entryChs, endWalkCh := zone.pool.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, zone.drivesPerSet/2)
+			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, zone.listDrivesPerSet)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)
@@ -832,7 +832,7 @@ func (z *xlZones) listObjects(ctx context.Context, bucket, prefix, marker, delim
 
 	var zoneDrivesPerSet []int
 	for _, zone := range z.zones {
-		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.drivesPerSet/2)
+		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.listDrivesPerSet)
 	}
 
 	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, zoneDrivesPerSet)
