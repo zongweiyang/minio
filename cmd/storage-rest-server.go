@@ -474,12 +474,18 @@ func (s *storageRESTServer) WalkHandler(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set(xhttp.ContentType, "text/event-stream")
 	encoder := gob.NewEncoder(w)
 
+	t1 := time.Now()
 	fch, err := s.storage.Walk(volume, dirPath, markerPath, recursive, leafFile, readMetadata, r.Context().Done())
 	if err != nil {
 		s.writeErrorResponse(w, err)
 		return
 	}
+	var firstOne bool
 	for fi := range fch {
+		if listDebug && !firstOne {
+			logger.Info("Time %s taken for first entry to be written over the network", time.Since(t1))
+			firstOne = true
+		}
 		encoder.Encode(&fi)
 	}
 	w.(http.Flusher).Flush()

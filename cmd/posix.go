@@ -901,7 +901,7 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 			}
 
 			if listDebug && !firstOne {
-				logger.Info("Time %s taken for first entry to be written %d", time.Since(t1))
+				logger.Info("Time %s taken for first entry to be written", time.Since(t1))
 				firstOne = false
 			}
 
