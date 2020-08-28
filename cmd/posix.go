@@ -866,9 +866,13 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 	go func() {
 		defer close(ch)
 		listDir := func(volume, dirPath, dirEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
+			t1 := time.Now()
 			entries, err := s.ListDir(volume, dirPath, -1, "")
 			if err != nil {
 				return false, nil, false
+			}
+			if listDebug {
+				logger.Info("Time %s taken for readdir entries %d", time.Since(t1), len(entries))
 			}
 			if len(entries) == 0 {
 				return true, nil, false
@@ -878,6 +882,8 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 		}
 
 		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, recursive, listDir, s.isLeaf, s.isLeafDir, endWalkCh)
+		t1 := time.Now()
+		var firstOne bool
 		for walkResult := range walkResultCh {
 			var fi FileInfo
 			if HasSuffix(walkResult.entry, SlashSeparator) {
@@ -893,6 +899,12 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 				}
 				fi = readMetadataFn(xlMetaBuf, volume, walkResult.entry)
 			}
+
+			if listDebug && !firstOne {
+				logger.Info("Time %s taken for first entry to be written %d", time.Since(t1))
+				firstOne = false
+			}
+
 			select {
 			case ch <- fi:
 			case <-endWalkCh:

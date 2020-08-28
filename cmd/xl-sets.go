@@ -39,6 +39,8 @@ import (
 	"github.com/minio/minio/pkg/sync/errgroup"
 )
 
+var listDebug = env.Get("MINIO_LIST_DEBUG", "off") == "on"
+
 // setsDsyncLockers is encapsulated type for Close()
 type setsDsyncLockers [][]dsync.NetLocker
 
@@ -910,16 +912,22 @@ func mergeEntriesCh(entryChs []FileInfoCh, maxKeys int, tolerance int) (entries 
 	var i = 0
 	entriesInfos := make([]FileInfo, len(entryChs))
 	entriesValid := make([]bool, len(entryChs))
+	t1 := time.Now()
+	var firstOne bool
 	for {
 		fi, quorumCount, valid := lexicallySortedEntry(entryChs, entriesInfos, entriesValid)
 		if !valid {
 			// We have reached EOF across all entryChs, break the loop.
 			break
 		}
-
 		if quorumCount < tolerance {
 			// Skip entries which are not found on upto read quorum
 			continue
+		}
+
+		if listDebug && !firstOne {
+			logger.Info("lexicallySortedEntry returned first entry in %s, across drives %d", time.Since(t1), len(entryChs))
+			firstOne = true
 		}
 
 		entries.Files = append(entries.Files, fi)
@@ -967,9 +975,6 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 	for _, set := range s.sets {
 		// Reset for the next erasure set.
 		success = drivesPerSet
-		if success > 0 {
-			success = 1
-		}
 		for _, disk := range set.getLoadBalancedDisks() {
 			if disk == nil {
 				// Disk can be offline
@@ -999,9 +1004,6 @@ func (s *xlSets) startSplunkMergeWalksN(ctx context.Context, bucket, prefix, mar
 	var success int
 	for _, set := range s.sets {
 		success = drivesPerSet
-		if success > 0 {
-			success = 1
-		}
 		for _, disk := range set.getLoadBalancedDisks() {
 			if disk == nil {
 				// Disk can be offline
@@ -1174,13 +1176,18 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	entryChs, endWalkCh := s.pool.Release(listParams{bucket: bucket, recursive: recursive, marker: marker, prefix: prefix})
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
-		// start file tree walk across at most randomly 1 disk per set
+		// start file tree walk across at most randomly listDrivesPerSet disk per set
 		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.listDrivesPerSet)
 	}
 
+	t1 := time.Now()
 	entries := mergeEntriesCh(entryChs, maxKeys, s.listDrivesPerSet)
 	if len(entries.Files) == 0 {
 		return loi, nil
+	}
+
+	if listDebug {
+		logger.Info("mergeEntries returned %d entries in %s", len(entries.Files), time.Since(t1))
 	}
 
 	loi.IsTruncated = entries.IsTruncated
