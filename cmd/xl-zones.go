@@ -740,9 +740,14 @@ func (z *xlZones) listObjectsSplunk(ctx context.Context, bucket, prefix, marker 
 		zoneDrivesPerSet = append(zoneDrivesPerSet, zone.listDrivesPerSet)
 	}
 
+	t1 := time.Now()
 	entries := mergeZonesEntriesCh(zonesEntryChs, maxKeys, zoneDrivesPerSet)
 	if len(entries.Files) == 0 {
 		return loi, nil
+	}
+
+	if listDebug {
+		logger.Info("listDebug: mergeZoneEntries returned %d entries in %s", len(entries.Files), time.Since(t1))
 	}
 
 	loi.IsTruncated = entries.IsTruncated
