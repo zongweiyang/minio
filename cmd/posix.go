@@ -871,8 +871,8 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 			if err != nil {
 				return false, nil, false
 			}
-			if listDebug {
-				logger.Info("listDebug: time %s taken for readdir entries %d", time.Since(t1), len(entries))
+			if listDebug && time.Since(t1) > 500*time.Millisecond {
+				logger.Info("listDebug: readdir took %s for %d entries", time.Since(t1), len(entries))
 			}
 			if len(entries) == 0 {
 				return true, nil, false
