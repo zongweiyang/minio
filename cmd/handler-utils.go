@@ -481,10 +481,6 @@ func proxyRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, e
 	}
 
 	r.URL.Host = ep.Host
-	t1 := time.Now()
 	f.ServeHTTP(w, r)
-	if listDebug {
-		logger.Info("Request for ListObjects proxied took %s time to respond", time.Since(t1))
-	}
 	return
 }

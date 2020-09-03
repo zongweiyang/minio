@@ -389,7 +389,11 @@ func (client *storageRESTClient) Walk(volume, dirPath, marker string, recursive 
 	if err != nil {
 		return nil, err
 	}
+	if listDebug {
+		logger.Info("listDebug: time taken for the Walk network call %s", time.Since(t1))
+	}
 
+	t1 = time.Now()
 	ch := make(chan FileInfo)
 	go func() {
 		defer close(ch)
@@ -403,13 +407,17 @@ func (client *storageRESTClient) Walk(volume, dirPath, marker string, recursive 
 				// Upon error return
 				return
 			}
+			if listDebug && !firstOne {
+				logger.Info("listDebug: time %s taken for first entry to be read over the network", time.Since(t1))
+			}
+			t1 = time.Now()
 			select {
 			case ch <- fi:
 			case <-endWalkCh:
 				return
 			}
 			if listDebug && !firstOne {
-				logger.Info("listDebug: time %s taken for first entry to be read over the network", time.Since(t1))
+				logger.Info("listDebug: time %s taken for first entry to be read over the channel", time.Since(t1))
 				firstOne = true
 			}
 		}
