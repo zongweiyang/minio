@@ -483,7 +483,7 @@ func (s *storageRESTServer) WalkHandler(w http.ResponseWriter, r *http.Request) 
 	var firstOne bool
 	for fi := range fch {
 		if listDebug && !firstOne {
-			logger.Info("Time %s taken for first entry to be written over the network", time.Since(t1))
+			logger.Info("listDebug: time %s taken for first entry to be written over the network", time.Since(t1))
 			firstOne = true
 		}
 		encoder.Encode(&fi)

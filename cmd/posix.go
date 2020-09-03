@@ -872,7 +872,7 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 				return false, nil, false
 			}
 			if listDebug {
-				logger.Info("Time %s taken for readdir entries %d", time.Since(t1), len(entries))
+				logger.Info("listDebug: time %s taken for readdir entries %d", time.Since(t1), len(entries))
 			}
 			if len(entries) == 0 {
 				return true, nil, false
@@ -901,8 +901,8 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 			}
 
 			if listDebug && !firstOne {
-				logger.Info("Time %s taken for first entry to be written", time.Since(t1))
-				firstOne = false
+				logger.Info("listDebug: time %s taken for first entry to be written", time.Since(t1))
+				firstOne = true
 			}
 
 			select {

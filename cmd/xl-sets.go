@@ -303,7 +303,9 @@ func newXLSets(ctx context.Context, endpoints Endpoints, storageDisks []StorageA
 		listDrivesPerSet = drivesPerSet / 2
 	}
 
-	logger.Info("Using total drives to list %d", listDrivesPerSet*setCount)
+	if listDebug {
+		logger.Info("listDebug: using total drives to list %d", listDrivesPerSet*setCount)
+	}
 
 	endpointStrings := make([]string, len(endpoints))
 	// Initialize the XL sets instance.
@@ -920,13 +922,14 @@ func mergeEntriesCh(entryChs []FileInfoCh, maxKeys int, tolerance int) (entries 
 			// We have reached EOF across all entryChs, break the loop.
 			break
 		}
+
 		if quorumCount < tolerance {
 			// Skip entries which are not found on upto read quorum
 			continue
 		}
 
 		if listDebug && !firstOne {
-			logger.Info("lexicallySortedEntry returned first entry in %s, across drives %d", time.Since(t1), len(entryChs))
+			logger.Info("listDebug: lexicallySortedEntry returned first entry in %s, across drives %d", time.Since(t1), len(entryChs))
 			firstOne = true
 		}
 

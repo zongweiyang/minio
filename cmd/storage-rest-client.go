@@ -33,6 +33,7 @@ import (
 
 	"github.com/minio/minio/cmd/http"
 	xhttp "github.com/minio/minio/cmd/http"
+	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/cmd/rest"
 	xnet "github.com/minio/minio/pkg/net"
 )
@@ -383,6 +384,7 @@ func (client *storageRESTClient) Walk(volume, dirPath, marker string, recursive 
 	values.Set(storageRESTMarkerPath, marker)
 	values.Set(storageRESTRecursive, strconv.FormatBool(recursive))
 	values.Set(storageRESTLeafFile, leafFile)
+	t1 := time.Now()
 	respBody, err := client.call(storageRESTMethodWalk, values, nil, -1)
 	if err != nil {
 		return nil, err
@@ -394,6 +396,7 @@ func (client *storageRESTClient) Walk(volume, dirPath, marker string, recursive 
 		defer http.DrainBody(respBody)
 
 		decoder := gob.NewDecoder(respBody)
+		var firstOne bool
 		for {
 			var fi FileInfo
 			if gerr := decoder.Decode(&fi); gerr != nil {
@@ -405,7 +408,10 @@ func (client *storageRESTClient) Walk(volume, dirPath, marker string, recursive 
 			case <-endWalkCh:
 				return
 			}
-
+			if listDebug && !firstOne {
+				logger.Info("listDebug: time %s taken for first entry to be read over the network", time.Since(t1))
+				firstOne = true
+			}
 		}
 	}()
 
