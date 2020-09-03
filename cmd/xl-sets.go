@@ -1190,7 +1190,7 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	}
 
 	if listDebug {
-		logger.Info("mergeEntries returned %d entries in %s", len(entries.Files), time.Since(t1))
+		logger.Info("listDebug: mergeEntries returned %d entries in %s", len(entries.Files), time.Since(t1))
 	}
 
 	loi.IsTruncated = entries.IsTruncated
