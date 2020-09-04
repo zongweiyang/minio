@@ -384,6 +384,9 @@ func serverMain(ctx *cli.Context) {
 	globalRootCAs, err = config.GetRootCAs(globalCertsCADir.Get())
 	logger.FatalIf(err, "Failed to read root CAs (%v)", err)
 
+	globalProxyEndpoints, err = GetProxyEndpoints(globalEndpoints)
+	logger.FatalIf(err, "Invalid command line arguments")
+
 	globalMinioEndpoint = func() string {
 		host := globalMinioHost
 		if host == "" {
