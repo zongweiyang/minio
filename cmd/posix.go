@@ -866,7 +866,6 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 	go func() {
 		defer close(ch)
 		listDir := func(volume, dirPath, dirEntry string) (emptyDir bool, entries []string, delayIsLeaf bool) {
-			t1 := time.Now()
 			entries, err := s.ListDir(volume, dirPath, -1, "")
 			if err != nil {
 				return false, nil, false
@@ -879,8 +878,6 @@ func (s *posix) Walk(volume, dirPath, marker string, recursive bool, leafFile st
 		}
 
 		walkResultCh := startTreeWalk(GlobalContext, volume, dirPath, marker, recursive, listDir, s.isLeaf, s.isLeafDir, endWalkCh)
-		t1 := time.Now()
-		var firstOne bool
 		for walkResult := range walkResultCh {
 			var fi FileInfo
 			if HasSuffix(walkResult.entry, SlashSeparator) {
