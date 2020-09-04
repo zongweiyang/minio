@@ -967,34 +967,29 @@ func isTruncated(entryChs []FileInfoCh, entries []FileInfo, entriesValid []bool)
 }
 
 func (s *xlSets) startMergeWalks(ctx context.Context, bucket, prefix, marker string, recursive bool, endWalkCh <-chan struct{}) []FileInfoCh {
-	return s.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, -1)
+	return s.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, -1, false)
 }
 
 // Starts a walk channel across all disks and returns a slice of
 // FileInfo channels which can be read from.
-func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker string, recursive bool, endWalkCh <-chan struct{}, drivesPerSet int) []FileInfoCh {
+func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker string, recursive bool, endWalkCh <-chan struct{}, drivesPerSet int, splunk bool) []FileInfoCh {
 	var entryChs []FileInfoCh
-	var success int
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
 	for _, set := range s.sets {
-		// Reset for the next erasure set.
-		success = drivesPerSet
-		for _, disk := range set.getLoadBalancedDisks() {
-			if disk == nil {
-				// Disk can be offline
-				continue
-			}
-			entryCh, err := disk.Walk(bucket, prefix, marker, recursive, xlMetaJSONFile, readMetadata, endWalkCh)
-			if err != nil {
-				// Disk walk returned error, ignore it.
-				continue
-			}
-			entryChs = append(entryChs, FileInfoCh{
-				Ch: entryCh,
-			})
-			success--
-			if success == 0 {
-				break
-			}
+		for _, disk := range set.getLoadBalancedNDisks(drivesPerSet) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				entryCh, err := disk.Walk(bucket, prefix, marker, recursive, xlMetaJSONFile, readMetadata, endWalkCh)
+				if err != nil {
+					return
+				}
+				mutex.Lock()
+				entryChs = append(entryChs, FileInfoCh{
+					Ch: entryCh,
+				})
+			}()
 		}
 	}
 	return entryChs
@@ -1003,37 +998,14 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 // Starts a walk channel across all disks and returns a slice of
 // FileInfo channels which can be read from.
 func (s *xlSets) startSplunkMergeWalksN(ctx context.Context, bucket, prefix, marker string, endWalkCh <-chan struct{}, drivesPerSet int) []FileInfoCh {
-	var entryChs []FileInfoCh
-	var success int
-	for _, set := range s.sets {
-		success = drivesPerSet
-		for _, disk := range set.getLoadBalancedDisks() {
-			if disk == nil {
-				// Disk can be offline
-				continue
-			}
-			entryCh, err := disk.WalkSplunk(bucket, prefix, marker, endWalkCh)
-			if err != nil {
-				// Disk walk returned error, ignore it.
-				continue
-			}
-			entryChs = append(entryChs, FileInfoCh{
-				Ch: entryCh,
-			})
-			success--
-			if success == 0 {
-				break
-			}
-		}
-	}
-	return entryChs
+	return s.startMergeWalksN(ctx, bucket, prefix, marker, true, endWalkCh, drivesPerSet, true)
 }
 
 func (s *xlSets) listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int) (loi ListObjectsInfo, err error) {
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 
-	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.listDrivesPerSet)
+	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.listDrivesPerSet, false)
 
 	var objInfos []ObjectInfo
 	var eof bool
@@ -1180,7 +1152,7 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
 		// start file tree walk across at most randomly listDrivesPerSet disk per set
-		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.listDrivesPerSet)
+		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.listDrivesPerSet, false)
 	}
 
 	t1 := time.Now()

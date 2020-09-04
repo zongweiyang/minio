@@ -607,7 +607,7 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 
 	for _, zone := range z.zones {
 		zonesEntryChs = append(zonesEntryChs,
-			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, zone.listDrivesPerSet))
+			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, zone.listDrivesPerSet, false))
 	}
 
 	var objInfos []ObjectInfo
@@ -829,7 +829,7 @@ func (z *xlZones) listObjects(ctx context.Context, bucket, prefix, marker, delim
 		entryChs, endWalkCh := zone.pool.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, zone.listDrivesPerSet)
+			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, zone.listDrivesPerSet, false)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)

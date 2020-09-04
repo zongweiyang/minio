@@ -23,6 +23,21 @@ import (
 	"github.com/minio/minio/pkg/sync/errgroup"
 )
 
+func (xl xlObjects) getLoadBalancedNDisks(n int) (ndisks []StorageAPI) {
+	disks := xl.getLoadBalancedDisks()
+	for _, disk := range disks {
+		if disk == nil {
+			continue
+		}
+		ndisks = append(ndisks, disk)
+		n--
+		if n == 0 {
+			break
+		}
+	}
+	return
+}
+
 // getLoadBalancedDisks - fetches load balanced (sufficiently randomized) disk slice.
 func (xl xlObjects) getLoadBalancedDisks() (newDisks []StorageAPI) {
 	disks := xl.getDisks()
