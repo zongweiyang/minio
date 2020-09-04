@@ -979,9 +979,15 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 	for _, set := range s.sets {
 		for _, disk := range set.getLoadBalancedNDisks(drivesPerSet) {
 			wg.Add(1)
-			go func() {
+			go func(disk StorageAPI) {
 				defer wg.Done()
-				entryCh, err := disk.Walk(bucket, prefix, marker, recursive, xlMetaJSONFile, readMetadata, endWalkCh)
+				var entryCh chan FileInfo
+				var err error
+				if splunk {
+					entryCh, err = disk.WalkSplunk(bucket, prefix, marker, endWalkCh)
+				} else {
+					entryCh, err = disk.Walk(bucket, prefix, marker, recursive, xlMetaJSONFile, readMetadata, endWalkCh)
+				}
 				if err != nil {
 					return
 				}
@@ -989,7 +995,7 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 				entryChs = append(entryChs, FileInfoCh{
 					Ch: entryCh,
 				})
-			}()
+			}(disk)
 		}
 	}
 	return entryChs
