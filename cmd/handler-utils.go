@@ -481,6 +481,12 @@ func proxyRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, e
 	}
 
 	r.URL.Host = ep.Host
+	t1 := time.Now()
 	f.ServeHTTP(w, r)
+	if listDebug {
+		if time.Since(t1) > 1*time.Second {
+			logger.Info("listDebug: spent more than a second to reply back to client")
+		}
+	}
 	return
 }

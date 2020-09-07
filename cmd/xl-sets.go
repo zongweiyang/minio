@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -291,17 +290,7 @@ const defaultMonitorConnectEndpointInterval = time.Second * 10 // Set to 10 secs
 func newXLSets(ctx context.Context, endpoints Endpoints, storageDisks []StorageAPI, format *formatXLV3) (*xlSets, error) {
 	setCount := len(format.XL.Sets)
 	drivesPerSet := len(format.XL.Sets[0])
-
-	var listDrivesPerSet int
-	if v := env.Get("MINIO_LIST_DRIVES_PER_SET", ""); v != "" {
-		var err error
-		listDrivesPerSet, err = strconv.Atoi(v)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		listDrivesPerSet = drivesPerSet / 2
-	}
+	listDrivesPerSet := drivesPerSet / 2
 
 	if listDebug {
 		logger.Info("listDebug: using total drives to list %d", listDrivesPerSet*setCount)
@@ -967,17 +956,17 @@ func isTruncated(entryChs []FileInfoCh, entries []FileInfo, entriesValid []bool)
 }
 
 func (s *xlSets) startMergeWalks(ctx context.Context, bucket, prefix, marker string, recursive bool, endWalkCh <-chan struct{}) []FileInfoCh {
-	return s.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, -1, false)
+	return s.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, false)
 }
 
 // Starts a walk channel across all disks and returns a slice of
 // FileInfo channels which can be read from.
-func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker string, recursive bool, endWalkCh <-chan struct{}, drivesPerSet int, splunk bool) []FileInfoCh {
+func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker string, recursive bool, endWalkCh <-chan struct{}, splunk bool) []FileInfoCh {
 	var entryChs []FileInfoCh
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
 	for _, set := range s.sets {
-		for _, disk := range set.getLoadBalancedNDisks(drivesPerSet) {
+		for _, disk := range set.getLoadBalancedNDisks(-1) {
 			wg.Add(1)
 			go func(disk StorageAPI) {
 				defer wg.Done()
@@ -1005,15 +994,15 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 
 // Starts a walk channel across all disks and returns a slice of
 // FileInfo channels which can be read from.
-func (s *xlSets) startSplunkMergeWalksN(ctx context.Context, bucket, prefix, marker string, endWalkCh <-chan struct{}, drivesPerSet int) []FileInfoCh {
-	return s.startMergeWalksN(ctx, bucket, prefix, marker, true, endWalkCh, drivesPerSet, true)
+func (s *xlSets) startSplunkMergeWalksN(ctx context.Context, bucket, prefix, marker string, endWalkCh <-chan struct{}) []FileInfoCh {
+	return s.startMergeWalksN(ctx, bucket, prefix, marker, true, endWalkCh, true)
 }
 
 func (s *xlSets) listObjectsNonSlash(ctx context.Context, bucket, prefix, marker, delimiter string, maxKeys int) (loi ListObjectsInfo, err error) {
 	endWalkCh := make(chan struct{})
 	defer close(endWalkCh)
 
-	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, s.listDrivesPerSet, false)
+	entryChs := s.startMergeWalksN(GlobalContext, bucket, prefix, "", true, endWalkCh, false)
 
 	var objInfos []ObjectInfo
 	var eof bool
@@ -1159,8 +1148,8 @@ func (s *xlSets) listObjects(ctx context.Context, bucket, prefix, marker, delimi
 	entryChs, endWalkCh := s.pool.Release(listParams{bucket: bucket, recursive: recursive, marker: marker, prefix: prefix})
 	if entryChs == nil {
 		endWalkCh = make(chan struct{})
-		// start file tree walk across at most randomly listDrivesPerSet disk per set
-		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, s.listDrivesPerSet, false)
+		// start file tree walk across at most randomly all all online drives
+		entryChs = s.startMergeWalksN(GlobalContext, bucket, prefix, marker, recursive, endWalkCh, false)
 	}
 
 	t1 := time.Now()

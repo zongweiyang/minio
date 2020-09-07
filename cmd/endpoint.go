@@ -759,11 +759,10 @@ func GetProxyEndpoints(endpointZones EndpointZones) ([]ProxyEndpoint, error) {
 			tr := newCustomHTTPTransport(tlsConfig, rest.DefaultRESTTimeout)()
 			tr.TLSHandshakeTimeout = 20 * time.Second
 			tr.ExpectContinueTimeout = 20 * time.Second
-			tr.ResponseHeaderTimeout = 1 * time.Hour
+			tr.ResponseHeaderTimeout = 30 * time.Minute
 			// Allow more requests to be in flight.
-			tr.MaxConnsPerHost = 256
-			tr.MaxIdleConns = 256
-			tr.MaxIdleConnsPerHost = 16
+			tr.MaxIdleConns = 64
+			tr.MaxIdleConnsPerHost = 64
 
 			proxyEps = append(proxyEps, ProxyEndpoint{
 				Endpoint:  endpoint,

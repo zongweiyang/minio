@@ -607,7 +607,7 @@ func (z *xlZones) listObjectsNonSlash(ctx context.Context, bucket, prefix, marke
 
 	for _, zone := range z.zones {
 		zonesEntryChs = append(zonesEntryChs,
-			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, zone.listDrivesPerSet, false))
+			zone.startMergeWalksN(ctx, bucket, prefix, "", true, endWalkCh, false))
 	}
 
 	var objInfos []ObjectInfo
@@ -729,7 +729,7 @@ func (z *xlZones) listObjectsSplunk(ctx context.Context, bucket, prefix, marker 
 		entryChs, endWalkCh := zone.poolSplunk.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startSplunkMergeWalksN(ctx, bucket, prefix, marker, endWalkCh, zone.listDrivesPerSet)
+			entryChs = zone.startSplunkMergeWalksN(ctx, bucket, prefix, marker, endWalkCh)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)
@@ -829,7 +829,7 @@ func (z *xlZones) listObjects(ctx context.Context, bucket, prefix, marker, delim
 		entryChs, endWalkCh := zone.pool.Release(listParams{bucket, recursive, marker, prefix})
 		if entryChs == nil {
 			endWalkCh = make(chan struct{})
-			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, zone.listDrivesPerSet, false)
+			entryChs = zone.startMergeWalksN(ctx, bucket, prefix, marker, recursive, endWalkCh, false)
 		}
 		zonesEntryChs = append(zonesEntryChs, entryChs)
 		zonesEndWalkCh = append(zonesEndWalkCh, endWalkCh)
