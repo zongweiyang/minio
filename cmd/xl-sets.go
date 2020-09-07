@@ -995,9 +995,11 @@ func (s *xlSets) startMergeWalksN(ctx context.Context, bucket, prefix, marker st
 				entryChs = append(entryChs, FileInfoCh{
 					Ch: entryCh,
 				})
+				mutex.Unlock()
 			}(disk)
 		}
 	}
+	wg.Wait()
 	return entryChs
 }
 
