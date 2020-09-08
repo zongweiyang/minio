@@ -102,6 +102,9 @@ func (c *Client) CallWithContext(ctx context.Context, method string, values url.
 	}
 	req, err := http.NewRequest(http.MethodPost, c.url.String()+method+querySep+values.Encode(), body)
 	if err != nil {
+		if xnet.IsNetworkOrHostDown(err) || errors.Is(err, context.DeadlineExceeded) {
+			c.MarkOffline()
+		}
 		return nil, &NetworkError{err}
 	}
 	req = req.WithContext(ctx)
@@ -112,9 +115,7 @@ func (c *Client) CallWithContext(ctx context.Context, method string, values url.
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// A canceled context doesn't always mean a network problem.
-		if !errors.Is(err, context.Canceled) {
-			// We are safe from recursion
+		if xnet.IsNetworkOrHostDown(err) || errors.Is(err, context.DeadlineExceeded) {
 			c.MarkOffline()
 		}
 		return nil, &NetworkError{err}
