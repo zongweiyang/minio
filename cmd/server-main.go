@@ -193,15 +193,7 @@ func initSafeMode(ctx context.Context, newObject ObjectLayer) (err error) {
 	// Indicate to our routine to exit cleanly upon return.
 	defer cancel()
 
-	// Make sure to hold lock for entire migration to avoid
-	// such that only one server should migrate the entire config
-	// at a given time, this big transaction lock ensures this
-	// appropriately. This is also true for rotation of encrypted
-	// content.
-	txnLk := newObject.NewNSLock(retryCtx, minioMetaBucket, minioConfigPrefix+"/transaction.lock")
-	defer func(txnLk RWLocker) {
-		txnLk.Unlock()
-
+	defer func() {
 		if err != nil {
 			var cerr config.Err
 			// For any config error, we don't need to drop into safe-mode
@@ -222,16 +214,13 @@ func initSafeMode(ctx context.Context, newObject ObjectLayer) (err error) {
 
 			<-globalOSSignalCh
 		}
-	}(txnLk)
+	}()
 
 	// Enable background operations for erasure coding
 	if globalIsErasure {
 		initAutoHeal(ctx, newObject)
 		initBackgroundReplication(ctx, newObject)
 	}
-
-	// allocate dynamic timeout once before the loop
-	configLockTimeout := newDynamicTimeout(3*time.Second, 5*time.Second)
 
 	// ****  WARNING ****
 	// Migrating to encrypted backend should happen before initialization of any
@@ -246,18 +235,6 @@ func initSafeMode(ctx context.Context, newObject ObjectLayer) (err error) {
 	rquorum := InsufficientReadQuorum{}
 	wquorum := InsufficientWriteQuorum{}
 	for range retry.NewTimerWithJitter(retryCtx, 250*time.Millisecond, 500*time.Millisecond, retry.MaxJitter) {
-		// let one of the server acquire the lock, if not let them timeout.
-		// which shall be retried again by this loop.
-		if err = txnLk.GetLock(configLockTimeout); err != nil {
-			logger.Info("Waiting for all MinIO sub-systems to be initialized.. trying to acquire lock")
-			continue
-		}
-
-		// These messages only meant primarily for distributed setup, so only log during distributed setup.
-		if globalIsDistErasure {
-			logger.Info("Waiting for all MinIO sub-systems to be initialized.. lock acquired")
-		}
-
 		// Migrate all backend configs to encrypted backend configs, optionally
 		// handles rotating keys for encryption, if there is any retriable failure
 		// that shall be retried if there is an error.
@@ -282,7 +259,6 @@ func initSafeMode(ctx context.Context, newObject ObjectLayer) (err error) {
 			errors.As(err, &wquorum) ||
 			isErrBucketNotFound(err) {
 			logger.Info("Waiting for all MinIO sub-systems to be initialized.. possible cause (%v)", err)
-			txnLk.Unlock() // Unlock the transaction lock and allow other nodes to acquire the lock if possible.
 			continue
 		}
 
