@@ -484,7 +484,7 @@ func serverMain(ctx *cli.Context) {
 	// Enable healing to heal drives if possible
 	if globalIsXL {
 		initBackgroundHealing(GlobalContext, newObject)
-		initLocalDisksAutoHeal(GlobalContext, newObject)
+		// initLocalDisksAutoHeal(GlobalContext, newObject)
 	}
 
 	go startBackgroundOps(GlobalContext, newObject)
