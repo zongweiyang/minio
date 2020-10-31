@@ -70,6 +70,8 @@ func (h *healRoutine) run(ctx context.Context, objAPI ObjectLayer) {
 	for {
 		select {
 		case task, ok := <-h.tasks:
+			// Do not handle heal requests
+			continue
 			if !ok {
 				break
 			}
@@ -112,6 +114,8 @@ func startBackgroundHealing(ctx context.Context, objAPI ObjectLayer) {
 	// Run the background healer
 	globalBackgroundHealRoutine = initHealRoutine()
 	go globalBackgroundHealRoutine.run(ctx, objAPI)
+
+	return // Do not handle heal requests
 
 	// Launch the background healer sequence to track
 	// background healing operations, ignore errors
