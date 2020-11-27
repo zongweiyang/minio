@@ -901,7 +901,7 @@ func (er erasureObjects) DeleteObjects(ctx context.Context, bucket string, objec
 				dobjects[objIndex] = DeletedObject{
 					DeleteMarker:                  versions[objIndex].Deleted,
 					DeleteMarkerVersionID:         versions[objIndex].VersionID,
-					DeleteMarkerMTime:             versions[objIndex].ModTime,
+					DeleteMarkerMTime:             DeleteMarkerMTime{versions[objIndex].ModTime},
 					DeleteMarkerReplicationStatus: versions[objIndex].DeleteMarkerReplicationStatus,
 					ObjectName:                    versions[objIndex].Name,
 					VersionPurgeStatus:            versions[objIndex].VersionPurgeStatus,
