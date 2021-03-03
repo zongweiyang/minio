@@ -292,6 +292,8 @@ var (
 
 	globalTierConfigMgr *TierConfigMgr
 
+	globalTierJournal *tierJournal
+
 	globalDebugRemoteTiersImmediately []string
 	// Add new variable global values here.
 )
